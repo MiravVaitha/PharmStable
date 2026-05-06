@@ -84,10 +84,12 @@ export function rateLimit(
 /** Build a stable rate-limit key from a Next.js request. */
 export function keyForRequest(req: Request, userId: string | null): string {
   if (userId) return `u:${userId}`;
-  // Fall back to client IP. On Vercel / most reverse proxies the real client
-  // IP is in x-forwarded-for; pick the first entry.
+  return `ip:${ipFromRequest(req)}`;
+}
+
+/** Extract the client IP from common reverse-proxy headers. */
+export function ipFromRequest(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
-  const ip = fwd ? fwd.split(",")[0].trim() : "unknown";
-  const realIp = req.headers.get("x-real-ip") ?? ip;
-  return `ip:${realIp}`;
+  if (fwd) return fwd.split(",")[0].trim();
+  return req.headers.get("x-real-ip") ?? "unknown";
 }

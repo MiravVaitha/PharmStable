@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { calculateStability } from "@/lib/stability/algorithm";
 import type { StabilityInput } from "@/lib/stability/types";
 import { getAuthedUserId } from "@/lib/apiAuth";
-import { keyForRequest, rateLimit } from "@/lib/rateLimit";
+import { ipFromRequest, keyForRequest, rateLimit } from "@/lib/rateLimit";
 
 const LIMIT = 30;
 const WINDOW_MS = 60_000;
+// Cheap pre-auth IP throttle so unauthenticated floods don't get to do a
+// Supabase auth lookup on every request.
+const PREAUTH_LIMIT = 60;
+const PREAUTH_WINDOW_MS = 60_000;
 
 const MAX_DRUG_NAME = 200;
 const MAX_SMILES = 500;
@@ -18,6 +22,21 @@ const MAX_FREEFORM = 2000;
  * compute oracle or as a stepping stone to flood other endpoints.
  */
 export async function POST(req: NextRequest) {
+  const ipRl = rateLimit(
+    `analyze:ip:${ipFromRequest(req)}`,
+    PREAUTH_LIMIT,
+    PREAUTH_WINDOW_MS
+  );
+  if (!ipRl.ok) {
+    return NextResponse.json(
+      { error: `Rate limit exceeded. Try again in ${ipRl.retryAfterSec}s.` },
+      {
+        status: 429,
+        headers: { "Retry-After": String(ipRl.retryAfterSec) },
+      }
+    );
+  }
+
   const userId = await getAuthedUserId();
   if (!userId) {
     return NextResponse.json(

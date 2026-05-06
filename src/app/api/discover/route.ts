@@ -7,11 +7,15 @@ import {
 } from "@/lib/claude/discovery";
 import type { StabilityResult } from "@/lib/stability/types";
 import { getAuthedUserId } from "@/lib/apiAuth";
-import { keyForRequest, rateLimit } from "@/lib/rateLimit";
+import { ipFromRequest, keyForRequest, rateLimit } from "@/lib/rateLimit";
 
 // AI calls are expensive (latency + $$). Keep this tight.
 const LIMIT = 10;
 const WINDOW_MS = 60_000; // 1 min
+// Cheap pre-auth IP throttle so unauthenticated floods don't get to do a
+// Supabase auth lookup on every request.
+const PREAUTH_LIMIT = 30;
+const PREAUTH_WINDOW_MS = 60_000;
 
 // Bounds on user-controlled prompt inputs to keep request size predictable
 // and reduce prompt-injection / token-bomb surface.
@@ -32,6 +36,22 @@ const MAX_SMILES = 500;
  *   - Errors are sanitized so internal details never leak to the client.
  */
 export async function POST(req: NextRequest) {
+  // ── Pre-auth IP throttle ─────────────────────────────────────────
+  const ipRl = rateLimit(
+    `discover:ip:${ipFromRequest(req)}`,
+    PREAUTH_LIMIT,
+    PREAUTH_WINDOW_MS
+  );
+  if (!ipRl.ok) {
+    return NextResponse.json(
+      { error: `Rate limit exceeded. Try again in ${ipRl.retryAfterSec}s.` },
+      {
+        status: 429,
+        headers: { "Retry-After": String(ipRl.retryAfterSec) },
+      }
+    );
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────
   const userId = await getAuthedUserId();
   if (!userId) {
