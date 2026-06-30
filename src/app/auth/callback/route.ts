@@ -35,6 +35,7 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`);
     }
+    console.error("[auth/callback] exchangeCodeForSession error:", error);
   }
 
   // Email confirmation / magic link OTP flow
@@ -43,7 +44,11 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`);
     }
+    console.error("[auth/callback] verifyOtp error:", error);
   }
 
-  return NextResponse.redirect(`${origin}/auth/auth-code-error`);
+  const errorParam = searchParams.get("error_description") ?? searchParams.get("error");
+  const errUrl = new URL(`${origin}/auth/auth-code-error`);
+  if (errorParam) errUrl.searchParams.set("reason", errorParam);
+  return NextResponse.redirect(errUrl);
 }
